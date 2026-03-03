@@ -18,10 +18,8 @@ TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("No BOT_TOKEN found in environment variables")
 
-# Создаём Flask приложение
 app = Flask(__name__)
 
-# Создаём Telegram Bot и Application
 bot = telegram.Bot(token=TOKEN)
 telegram_app = Application.builder().token(TOKEN).build()
 
@@ -45,7 +43,6 @@ async def help_command(update, context):
 async def echo(update, context):
     await update.message.reply_text(f"Ты написал: {update.message.text}")
 
-# Регистрируем обработчики
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("help", help_command))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
@@ -60,7 +57,6 @@ def run_bot():
     logger.info("Telegram bot application started")
     loop.run_forever()
 
-# Запускаем поток с ботом (daemon=True, чтобы он завершился при остановке Flask)
 bot_thread = Thread(target=run_bot, daemon=True)
 bot_thread.start()
 
@@ -78,20 +74,19 @@ def webhook():
     """Принимает обновления от Telegram и передаёт их в бота"""
     try:
         update_data = request.get_json(force=True)
+        logger.info(f"Received update: {update_data}")  # Логируем входящие обновления
         update = telegram.Update.de_json(update_data, bot)
-        # Безопасно ставим обработку обновления в цикл событий бота
         asyncio.run_coroutine_threadsafe(telegram_app.process_update(update), loop)
         return "OK", 200
     except Exception as e:
         logger.error(f"Error processing update: {e}")
         return "Error", 500
 
-# --- Завершение работы (для корректной остановки при перезапуске) ---
+# --- Завершение работы ---
 import atexit
 
 def shutdown():
     logger.info("Shutting down Telegram bot application...")
-    # Останавливаем приложение и цикл событий
     asyncio.run_coroutine_threadsafe(telegram_app.stop(), loop).result(timeout=5)
     asyncio.run_coroutine_threadsafe(telegram_app.shutdown(), loop).result(timeout=5)
     loop.call_soon_threadsafe(loop.stop)
@@ -106,13 +101,18 @@ if __name__ == "__main__":
     if render_url:
         webhook_url = f"{render_url}/webhook"
         async def set_webhook():
-            await bot.delete_webhook()
-            await bot.set_webhook(url=webhook_url)
-            logger.info(f"Webhook set to {webhook_url}")
+            try:
+                await bot.delete_webhook()
+                result = await bot.set_webhook(url=webhook_url)
+                logger.info(f"Webhook set result: {result}, url: {webhook_url}")
+                # Проверим, что вебхук действительно установлен
+                webhook_info = await bot.get_webhook_info()
+                logger.info(f"Webhook info: {webhook_info}")
+            except Exception as e:
+                logger.error(f"Failed to set webhook: {e}")
         asyncio.run(set_webhook())
     else:
-        logger.warning("RENDER_EXTERNAL_URL not set, webhook not configured.")
+        logger.error("RENDER_EXTERNAL_URL is not set. Webhook not configured. Please set it manually.")
 
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
