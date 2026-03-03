@@ -6,7 +6,6 @@ from threading import Thread
 from flask import Flask, request
 import telegram
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from telegram.error import TelegramError
 
 # Настройка логирования
 logging.basicConfig(
@@ -16,6 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Токен бота из переменных окружения
 TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("No BOT_TOKEN found in environment variables")
@@ -30,7 +30,6 @@ async def start(update, context):
     try:
         user = update.effective_user
         logger.info(f"🚀 /start received from user {user.id} (@{user.username})")
-        # Пытаемся отправить ответ
         sent = await update.message.reply_text(
             f"Привет, {user.first_name}! 👋\n\n"
             f"Я бот, работающий на Render.com.\n"
@@ -101,6 +100,12 @@ def health():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    # ========== ДИАГНОСТИЧЕСКАЯ ЗАГЛУШКА ==========
+    # Эти строки будут логировать каждый запрос от Telegram
+    logger.info(f"🔥🔥🔥 WEBHOOK HIT! Headers: {dict(request.headers)}")
+    logger.info(f"🔥🔥🔥 Raw data: {request.get_data(as_text=True)}")
+    # ==============================================
+    
     try:
         update_data = request.get_json(force=True)
         update_id = update_data.get('update_id')
@@ -111,8 +116,7 @@ def webhook():
         # Отправляем обработку в цикл событий бота
         future = asyncio.run_coroutine_threadsafe(telegram_app.process_update(update), loop)
         
-        # Можно подождать немного, чтобы увидеть ошибки сразу
-        # Это заморозит ответ на 3 секунды, но даст диагностику
+        # Ждём немного, чтобы поймать ошибки
         try:
             future.result(timeout=3)
             logger.info(f"✅ Update {update_id} processed successfully")
@@ -183,7 +187,8 @@ def setup_webhook():
 
 setup_webhook()
 
-# --- Для локального запуска ---
+# --- Для локального запуска (не используется на Render, но оставлено для тестов) ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
